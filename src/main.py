@@ -5,18 +5,22 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
-import asyncpg
+from typing import Any
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None
 
 app = FastAPI(title="Mind Gateway Core Engine", version="0.4.0")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-pool: Optional[asyncpg.Pool] = None
+pool: Optional[Any] = None
 
 
 @app.on_event("startup")
 async def startup():
     global pool
-    if DATABASE_URL:
+    if DATABASE_URL and asyncpg:
         pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
 
 
