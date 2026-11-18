@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse, unquote
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 if os.path.exists(".env"):
@@ -378,7 +379,7 @@ async def ingest_whatsapp_webhook(payload: WhatsAppWebhookPayload):
     category = "HYPOTHESIS"
     confidence = 0.50
     meta = {**payload.metadata, "sender": payload.sender}
-    triggers = ("disparar", "campanha", "enviar whatsapp", "promocao", "promoção")
+    triggers = ("disparar", "campanha", "enviar", "executar", "publicar", "pagar", "transferir")
     requires_gate = any(t in payload.message.lower() for t in triggers)
     action_id = None
     async with pool.acquire() as conn:
@@ -415,7 +416,7 @@ async def ingest_whatsapp_webhook(payload: WhatsAppWebhookPayload):
                 INSERT INTO confirmation_actions
                     (id, tenant_id, raw_input_id, action_type, target_channel, payload, status, created_at, expires_at)
                 VALUES
-                    ($1, $2, $3, 'WHATSAPP_PROMOTIONAL_DISPATCH', 'whatsapp', CAST($4 AS jsonb), 'PENDING_APPROVAL', $5, $6)
+                    ($1, $2, $3, 'EXTERNAL_CRITICAL_DISPATCH', 'whatsapp', CAST($4 AS jsonb), 'PENDING_APPROVAL', $5, $6)
                 """,
                 action_id,
                 payload.tenant_id,
@@ -592,3 +593,216 @@ async def record_decision_calibration(req: CalibrationRequest):
         "drift_alert_triggered": drift_alert,
         "persisted": True,
     }
+
+
+@app.get("/api/v1/gate/pending")
+async def list_pending_gate_actions(
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111"),
+):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    now = datetime.now(timezone.utc)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, action_type, target_channel, payload, status, created_at, expires_at
+            FROM confirmation_actions
+            WHERE tenant_id = $1 AND status = 'PENDING_APPROVAL' AND expires_at > $2
+            ORDER BY created_at DESC
+            """,
+            tenant_id,
+            now,
+        )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "action_id": str(r["id"]),
+                "action_type": r["action_type"],
+                "target_channel": r["target_channel"],
+                "payload": r["payload"],
+                "created_at": r["created_at"].isoformat(),
+                "expires_at": r["expires_at"].isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+async def mobile_pwa_dashboard():
+    return """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0b0f19">
+<title>Mind Gateway OS</title>
+<style>
+  :root { --bg:#0b0f19; --card:#131b2e; --border:#1e293b; --accent:#f59e0b; --text:#f8fafc; --muted:#94a3b8; --ok:#10b981; --err:#ef4444; }
+  * { box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--text); padding:16px; max-width:600px; margin:auto; }
+  header { display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+  h1 { font-size:1.15rem; margin:0; letter-spacing:0.5px; color:var(--accent); }
+  .badge { font-size:0.75rem; padding:4px 8px; border-radius:999px; background:#064e3b; color:#6ee7b7; font-weight:600; }
+  .tabs { display:flex; gap:8px; margin-bottom:16px; }
+  .tab { flex:1; padding:10px; border:1px solid var(--border); background:var(--card); color:var(--muted); border-radius:8px; font-weight:600; cursor:pointer; text-align:center; font-size:0.85rem; }
+  .tab.active { border-color:var(--accent); color:var(--accent); background:#1e1b18; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:14px; }
+  label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:6px; }
+  textarea, input, select { width:100%; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:10px; border-radius:8px; font-size:0.95rem; margin-bottom:10px; }
+  button { width:100%; padding:12px; border:none; border-radius:8px; font-weight:700; font-size:0.95rem; cursor:pointer; }
+  .btn-primary { background:var(--accent); color:#0b0f19; }
+  .btn-ok { background:var(--ok); color:#06281e; margin-top:8px; }
+  .btn-voice { background:#1e293b; color:var(--text); margin-bottom:10px; border:1px solid #334155; }
+  pre { background:#060911; padding:10px; border-radius:8px; font-size:0.78rem; overflow-x:auto; color:#cbd5e1; white-space:pre-wrap; }
+  .item { border-bottom:1px solid var(--border); padding:10px 0; }
+  .item:last-child { border-bottom:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MIND GATEWAY OS</h1>
+  <span id="statusBadge" class="badge">CONECTANDO...</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('ingest', this)">1. Intenção</div>
+  <div class="tab" onclick="switchTab('gate', this)">2. Gate</div>
+  <div class="tab" onclick="switchTab('pig', this)">3. PIG & |E-R|</div>
+</div>
+
+<div id="ingest" class="panel active">
+  <div class="card">
+    <label>Captura Bruta (Protocolo MG-RAW-01 — Voz ou Texto)</label>
+    <button class="btn-voice" type="button" onclick="startVoice()">🎙️ Ditar Pensamento por Voz</button>
+    <textarea id="rawText" rows="4" placeholder="Ex: Acho que devemos estruturar o módulo B2B de triagem com setup de R$ 2.500..."></textarea>
+    <label>Categoria Declarada (sujeita à auditoria epistemológica)</label>
+    <select id="catSelect">
+      <option value="HYPOTHESIS">HYPOTHESIS (Suposição / Ideia)</option>
+      <option value="DECISION">DECISION (Decisão Tomada)</option>
+      <option value="FACT">FACT (Exige Evidência Externa)</option>
+      <option value="TASK">TASK (Tarefa Operacional)</option>
+    </select>
+    <input id="evidId" placeholder="ID de Evidência Externa (opcional)">
+    <button class="btn-primary" onclick="sendIngest()">Registrar no Mind Gateway</button>
+  </div>
+  <pre id="ingestOut">Aguardando captura...</pre>
+</div>
+
+<div id="gate" class="panel">
+  <div class="card">
+    <label>Ações Críticas Retidas (Human-in-the-Loop)</label>
+    <button class="btn-voice" onclick="loadPending()">🔄 Atualizar Fila Pendente</button>
+    <div id="pendingList">Carregando...</div>
+  </div>
+  <pre id="gateOut">Nenhuma aprovação executada nesta sessão.</pre>
+</div>
+
+<div id="pig" class="panel">
+  <div class="card">
+    <label>Calibração Empírica (Expectativa vs. Realidade |E - R|)</label>
+    <input id="calMetric" placeholder="Nome da decisão / métrica (ex: piloto_b2b_01)">
+    <input id="calExp" type="number" step="0.01" placeholder="Valor Esperado (E)">
+    <input id="calReal" type="number" step="0.01" placeholder="Valor Realizado (R)">
+    <button class="btn-primary" onclick="sendCalibrate()">Calibrar Decisão</button>
+  </div>
+  <pre id="pigOut">Pronto para calibrar.</pre>
+</div>
+
+<script>
+const TENANT = "11111111-1111-1111-1111-111111111111";
+
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    document.getElementById('statusBadge').textContent = d.db_connected ? 'ONLINE • DB OK' : 'ONLINE • SEM DB';
+  } catch(e) {
+    document.getElementById('statusBadge').textContent = 'OFFLINE';
+  }
+}
+
+function switchTab(id, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'gate') loadPending();
+}
+
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return alert('Reconhecimento de voz não suportado neste navegador. Use o microfone do teclado Gboard.');
+  const rec = new SR();
+  rec.lang = 'pt-BR';
+  rec.onresult = (e) => {
+    const box = document.getElementById('rawText');
+    box.value = (box.value ? box.value + ' ' : '') + e.results[0][0].transcript;
+  };
+  rec.start();
+}
+
+async function sendIngest() {
+  const raw_content = document.getElementById('rawText').value.trim();
+  if (!raw_content) return;
+  const category = document.getElementById('catSelect').value;
+  const external_evidence_id = document.getElementById('evidId').value.trim() || null;
+  const r = await fetch('/api/v1/ingest', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ tenant_id: TENANT, source_channel: 'mobile_pwa', raw_content, category, confidence: 1.0, external_evidence_id })
+  });
+  document.getElementById('ingestOut').textContent = JSON.stringify(await r.json(), null, 2);
+  document.getElementById('rawText').value = '';
+}
+
+async function loadPending() {
+  const r = await fetch('/api/v1/gate/pending?tenant_id=' + TENANT);
+  const d = await r.json();
+  const box = document.getElementById('pendingList');
+  if (!d.items || !d.items.length) {
+    box.innerHTML = '<p style="color:#94a3b8;font-size:0.85rem;">Nenhuma ação pendente no Confirmation Gate.</p>';
+    return;
+  }
+  box.innerHTML = d.items.map(i => `
+    <div class="item">
+      <div style="font-size:0.8rem;color:#f59e0b;font-weight:700;">${i.action_type}</div>
+      <div style="font-size:0.75rem;color:#94a3b8;">ID: ${i.action_id}</div>
+      <pre>${JSON.stringify(i.payload, null, 2)}</pre>
+      <button class="btn-ok" onclick="approveAction('${i.action_id}')">✅ AUTORIZAR EXECUÇÃO</button>
+    </div>
+  `).join('');
+}
+
+async function approveAction(action_id) {
+  const token = prompt("Digite AUTORIZADO para liberar a execução:");
+  if (!token) return;
+  const r = await fetch('/api/v1/gate/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action_id, tenant_id: TENANT, confirmation_keyword: token, operator_id: 'pedro_gentil' })
+  });
+  document.getElementById('gateOut').textContent = JSON.stringify(await r.json(), null, 2);
+  loadPending();
+}
+
+async function sendCalibrate() {
+  const metric_name = document.getElementById('calMetric').value.trim();
+  const expected_value = document.getElementById('calExp').value;
+  const realized_value = document.getElementById('calReal').value;
+  if (!metric_name || !expected_value || !realized_value) return;
+  const r = await fetch('/api/v1/calibrate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ tenant_id: TENANT, metric_name, expected_value, realized_value })
+  });
+  document.getElementById('pigOut').textContent = JSON.stringify(await r.json(), null, 2);
+}
+
+checkHealth();
+</script>
+</body>
+</html>"""
