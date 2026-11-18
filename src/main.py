@@ -1,3 +1,6 @@
+import json
+from datetime import timedelta
+from typing import Dict, Any
 import asyncio
 import json
 import os
@@ -189,12 +192,65 @@ async def ingest_raw_input(payload: IngestRequest):
     }
 
 
+class ActionProposeRequest(BaseModel):
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    raw_input_id: Optional[uuid.UUID] = None
+    action_type: str
+    target_channel: str = "whatsapp"
+    payload: Dict[str, Any]
+    ttl_minutes: int = Field(default=30, ge=1, le=1440)
+
+
+class WhatsAppWebhookPayload(BaseModel):
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    sender: str = "whatsapp_user"
+    message: str
+    message_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/v1/gate/propose", status_code=status.HTTP_201_CREATED)
+async def propose_confirmation_gate(req: ActionProposeRequest):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    action_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=req.ttl_minutes)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO confirmation_actions
+                (id, tenant_id, raw_input_id, action_type, target_channel, payload, status, created_at, expires_at)
+            VALUES
+                ($1, $2, $3, $4, $5, CAST($6 AS jsonb), 'PENDING_APPROVAL', $7, $8)
+            """,
+            action_id,
+            req.tenant_id,
+            req.raw_input_id,
+            req.action_type,
+            req.target_channel,
+            json.dumps(req.payload),
+            now,
+            expires_at,
+        )
+    return {
+        "status": "PENDING_APPROVAL",
+        "action_id": str(action_id),
+        "tenant_id": str(req.tenant_id),
+        "action_type": req.action_type,
+        "target_channel": req.target_channel,
+        "expires_at": expires_at.isoformat(),
+        "required_keyword": "AUTORIZADO",
+    }
+
+
 @app.post("/api/v1/gate/approve")
 async def approve_confirmation_gate(req: ActionApprovalRequest):
     if not pool:
         raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
     now = datetime.now(timezone.utc)
-    if req.confirmation_keyword.strip().upper() != "AUTORIZADO":
+    keyword = req.confirmation_keyword.strip().upper()
+    if keyword != "AUTORIZADO":
         raise HTTPException(status_code=400, detail="Token inválido. Exige palavra-chave 'AUTORIZADO'.")
     async with pool.acquire() as conn:
         action = await conn.fetchrow(
@@ -223,9 +279,91 @@ async def approve_confirmation_gate(req: ActionApprovalRequest):
             req.operator_id,
             action["id"],
         )
+        audit_payload = json.dumps(action["payload"]) if isinstance(action["payload"], (dict, list)) else str(action["payload"])
+        await conn.execute(
+            """
+            INSERT INTO confirmation_audit_log (action_id, approved_by, approval_token, action_payload)
+            VALUES ($1, $2, $3, CAST($4 AS jsonb))
+            """,
+            action["id"],
+            req.operator_id,
+            keyword,
+            audit_payload,
+        )
     return {
         "status": "EXECUTED",
         "action_id": str(req.action_id),
         "approved_by": req.operator_id,
         "executed_at": now.isoformat(),
     }
+
+
+@app.post("/api/v1/ingest/whatsapp", status_code=status.HTTP_201_CREATED)
+async def ingest_whatsapp_webhook(payload: WhatsAppWebhookPayload):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    raw_id = uuid.uuid4()
+    mem_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    category = "HYPOTHESIS"
+    confidence = 0.50
+    meta = {**payload.metadata, "sender": payload.sender}
+    triggers = ("disparar", "campanha", "enviar whatsapp", "promocao", "promoção")
+    requires_gate = any(t in payload.message.lower() for t in triggers)
+    action_id = None
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO raw_inputs (id, tenant_id, user_id, source_channel, raw_content, external_evidence_id, metadata, received_at)
+            VALUES ($1, $2, $3, 'whatsapp_webhook', $4, $5, CAST($6 AS jsonb), $7)
+            """,
+            raw_id,
+            payload.tenant_id,
+            payload.sender,
+            payload.message,
+            payload.message_id,
+            json.dumps(meta),
+            now,
+        )
+        await conn.execute(
+            """
+            INSERT INTO memory_objects (id, tenant_id, raw_input_id, category, content, confidence, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            mem_id,
+            payload.tenant_id,
+            raw_id,
+            category,
+            payload.message,
+            confidence,
+            now,
+        )
+        if requires_gate:
+            action_id = uuid.uuid4()
+            await conn.execute(
+                """
+                INSERT INTO confirmation_actions
+                    (id, tenant_id, raw_input_id, action_type, target_channel, payload, status, created_at, expires_at)
+                VALUES
+                    ($1, $2, $3, 'WHATSAPP_PROMOTIONAL_DISPATCH', 'whatsapp', CAST($4 AS jsonb), 'PENDING_APPROVAL', $5, $6)
+                """,
+                action_id,
+                payload.tenant_id,
+                raw_id,
+                json.dumps({"sender": payload.sender, "message": payload.message}),
+                now,
+                now + timedelta(minutes=30),
+            )
+    resp = {
+        "status": "INGESTED",
+        "channel": "whatsapp_webhook",
+        "raw_input_id": str(raw_id),
+        "memory_object_id": str(mem_id),
+        "category": category,
+        "confidence": confidence,
+        "persisted": True,
+    }
+    if action_id:
+        resp["gate_status"] = "PENDING_APPROVAL"
+        resp["action_id"] = str(action_id)
+    return resp
