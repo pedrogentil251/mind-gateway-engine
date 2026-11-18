@@ -272,11 +272,10 @@ async def approve_confirmation_gate(req: ActionApprovalRequest):
         await conn.execute(
             """
             UPDATE confirmation_actions
-            SET status = 'EXECUTED', executed_at = $1, approved_by = $2
-            WHERE id = $3
+            SET status = 'EXECUTED', executed_at = $1
+            WHERE id = $2
             """,
             now,
-            req.operator_id,
             action["id"],
         )
         audit_payload = json.dumps(action["payload"]) if isinstance(action["payload"], (dict, list)) else str(action["payload"])
