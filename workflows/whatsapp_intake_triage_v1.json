@@ -1,0 +1,23 @@
+{
+  "name": "Mind Gateway - WhatsApp Intake & Confirmation Gate Triage v1",
+  "nodes": [
+    {
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "path": "mind-gateway-intake",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "name": "Ingest Mind Gateway API",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "={{$env.MIND_GATEWAY_API_URL}}/api/v1/ingest",
+        "method": "POST",
+        "authentication": "genericCredentialType"
+      }
+    }
+  ],
+  "connections": {}
+}

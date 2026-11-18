@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mind_gateway_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mg_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-mind_gateway}
+    ports:
+      - "5432:5432"
+    volumes:
+      - mg_pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  mg_pgdata:
