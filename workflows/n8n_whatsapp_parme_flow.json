@@ -1,0 +1,86 @@
+{
+  "name": "Mind Gateway - WhatsApp Webhook & Confirmation Gate (MG-BASE-07)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mind-gateway-whatsapp",
+        "responseMode": "lastNode"
+      },
+      "id": "node-webhook-in",
+      "name": "Webhook WhatsApp Entrada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://web-production-bc7ad0f9.up.railway.app/api/v1/ingest/whatsapp",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender: $json.body.sender || 'whatsapp_user', message: $json.body.message, message_id: $json.body.message_id || null }) }}"
+      },
+      "id": "node-mg-ingest",
+      "name": "Mind Gateway Ingest & Gate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.gate_status }}",
+              "operation": "equals",
+              "value2": "PENDING_APPROVAL"
+            }
+          ]
+        }
+      },
+      "id": "node-gate-check",
+      "name": "Retido no Confirmation Gate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp Entrada": {
+      "main": [
+        [
+          {
+            "node": "Mind Gateway Ingest & Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mind Gateway Ingest & Gate": {
+      "main": [
+        [
+          {
+            "node": "Retido no Confirmation Gate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

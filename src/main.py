@@ -1,3 +1,7 @@
+from decimal import Decimal
+import json
+from datetime import timedelta
+from typing import Dict, Any
 import json
 from datetime import timedelta
 from typing import Dict, Any
@@ -77,6 +81,20 @@ class Pg8000Adapter:
                     return None
                 cols = [c["name"] for c in con.columns]
                 return dict(zip(cols, rows[0]))
+            finally:
+                con.close()
+        return await asyncio.to_thread(_run)
+
+    async def fetch(self, query: str, *args):
+        def _run():
+            con = self._connect()
+            try:
+                q, params = self._prep(query, args)
+                rows = con.run(q, **params)
+                if not rows:
+                    return []
+                cols = [c["name"] for c in con.columns]
+                return [dict(zip(cols, r)) for r in rows]
             finally:
                 con.close()
         return await asyncio.to_thread(_run)
@@ -244,6 +262,58 @@ async def propose_confirmation_gate(req: ActionProposeRequest):
     }
 
 
+class ActionProposeRequest(BaseModel):
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    raw_input_id: Optional[uuid.UUID] = None
+    action_type: str
+    target_channel: str = "whatsapp"
+    payload: Dict[str, Any]
+    ttl_minutes: int = Field(default=30, ge=1, le=1440)
+
+
+class WhatsAppWebhookPayload(BaseModel):
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    sender: str = "whatsapp_user"
+    message: str
+    message_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/v1/gate/propose", status_code=status.HTTP_201_CREATED)
+async def propose_confirmation_gate(req: ActionProposeRequest):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    action_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=req.ttl_minutes)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO confirmation_actions
+                (id, tenant_id, raw_input_id, action_type, target_channel, payload, status, created_at, expires_at)
+            VALUES
+                ($1, $2, $3, $4, $5, CAST($6 AS jsonb), 'PENDING_APPROVAL', $7, $8)
+            """,
+            action_id,
+            req.tenant_id,
+            req.raw_input_id,
+            req.action_type,
+            req.target_channel,
+            json.dumps(req.payload),
+            now,
+            expires_at,
+        )
+    return {
+        "status": "PENDING_APPROVAL",
+        "action_id": str(action_id),
+        "tenant_id": str(req.tenant_id),
+        "action_type": req.action_type,
+        "target_channel": req.target_channel,
+        "expires_at": expires_at.isoformat(),
+        "required_keyword": "AUTORIZADO",
+    }
+
+
 @app.post("/api/v1/gate/approve")
 async def approve_confirmation_gate(req: ActionApprovalRequest):
     if not pool:
@@ -272,10 +342,11 @@ async def approve_confirmation_gate(req: ActionApprovalRequest):
         await conn.execute(
             """
             UPDATE confirmation_actions
-            SET status = 'EXECUTED', executed_at = $1
-            WHERE id = $2
+            SET status = 'EXECUTED', executed_at = $1, approved_by = $2
+            WHERE id = $3
             """,
             now,
+            req.operator_id,
             action["id"],
         )
         audit_payload = json.dumps(action["payload"]) if isinstance(action["payload"], (dict, list)) else str(action["payload"])
@@ -366,3 +437,93 @@ async def ingest_whatsapp_webhook(payload: WhatsAppWebhookPayload):
         resp["gate_status"] = "PENDING_APPROVAL"
         resp["action_id"] = str(action_id)
     return resp
+
+
+class CalibrationRequest(BaseModel):
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    memory_object_id: Optional[uuid.UUID] = None
+    metric_name: str
+    expected_value: Decimal
+    realized_value: Decimal
+    notes: Optional[str] = None
+
+
+@app.get("/api/v1/memory/facts")
+async def list_verified_facts(
+    tenant_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111"),
+    prefix: Optional[str] = None,
+):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    async with pool.acquire() as conn:
+        if prefix:
+            rows = await conn.fetch(
+                "SELECT id, category, content, confidence, created_at FROM memory_objects WHERE tenant_id = $1 AND content LIKE $2 ORDER BY id",
+                tenant_id,
+                f"{prefix}%",
+            )
+        else:
+            rows = await conn.fetch(
+                "SELECT id, category, content, confidence, created_at FROM memory_objects WHERE tenant_id = $1 AND confidence = 1.00 ORDER BY id",
+                tenant_id,
+            )
+    return {
+        "tenant_id": str(tenant_id),
+        "count": len(rows),
+        "items": [
+            {
+                "id": str(r["id"]),
+                "category": r["category"],
+                "content": r["content"],
+                "confidence": float(r["confidence"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.post("/api/v1/calibrate", status_code=status.HTTP_201_CREATED)
+async def record_decision_calibration(req: CalibrationRequest):
+    if not pool:
+        raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
+    abs_deviation = abs(req.expected_value - req.realized_value).quantize(Decimal("0.01"))
+    cal_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    async with pool.acquire() as conn:
+        col_rows = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'decision_calibrations'"
+        )
+        available = {r["column_name"] for r in col_rows}
+        candidate = {
+            "id": cal_id,
+            "tenant_id": req.tenant_id,
+            "memory_object_id": req.memory_object_id,
+            "decision_id": req.memory_object_id,
+            "metric_name": req.metric_name,
+            "hypothesis_summary": req.metric_name,
+            "expected_value": req.expected_value,
+            "realized_value": req.realized_value,
+            "actual_value": req.realized_value,
+            "absolute_error": abs_deviation,
+            "deviation": abs_deviation,
+            "delta": abs_deviation,
+            "notes": req.notes or f"Calibracao {req.metric_name}",
+            "calibrated_at": now,
+            "created_at": now,
+        }
+        cols = [k for k in candidate if k in available and candidate[k] is not None]
+        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+        values = [candidate[k] for k in cols]
+        await conn.execute(
+            f"INSERT INTO decision_calibrations ({', '.join(cols)}) VALUES ({placeholders})",
+            *values,
+        )
+    return {
+        "status": "CALIBRATED",
+        "calibration_id": str(cal_id),
+        "metric_name": req.metric_name,
+        "expected_value": str(req.expected_value),
+        "realized_value": str(req.realized_value),
+        "absolute_deviation": str(abs_deviation),
+        "persisted": True,
+    }
