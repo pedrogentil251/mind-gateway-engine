@@ -1,0 +1,395 @@
+# ============================================================
+# GERADOR DO DOCUMENTO MASTER – MIND GATEWAY v0.3.3
+# Execute: python gerar_master.py
+# Requer: Python 3.10+
+# ============================================================
+
+master_text = """================================================================================
+MIND GATEWAY: ARQUITETURA COGNITIVA, SISTEMA OPERACIONAL & BLUEPRINT MASTER
+DOCUMENTO TÉCNICO, CONCEITUAL E ESTRATÉGICO DE ENGENHARIA (v0.3.3 / MG-BASE-06)
+================================================================================
+
+AUTOR E CRIADOR: Pedro Sol Gentil (Pedro Gentil)
+SISTEMA: Mind Gateway / Otimizzai Engine
+STATUS: Baseline MG-BASE-06 congelada | v0.3.3
+DATA DE CONSOLIDAÇÃO: Agosto de 2026
+
+================================================================================
+SUMÁRIO GERAL DO ARQUIVO MASTER
+================================================================================
+1. VISÃO FUNDADORA, FILOSOFIA E MANIFESTO DO MIND GATEWAY
+2. O PROBLEMA DA FRAGMENTAÇÃO E O FOSSO COMPETITIVO (MOAT)
+3. TAXONOMIA EPISTEMOLÓGICA E RIGOR METODOLÓGICO (VOLUME 1)
+4. ARQUITETURA MODULAR DE 7 CAMADAS DO COGNITIVE OS
+5. O MOTOR DE GOVERNANÇA E OPERAÇÃO: OTIMIZZAI V2.2 & PROTOCOLOS R20–R24
+6. O GRAFO DE INTELIGÊNCIA PESSOAL E EMPRESARIAL (PIG)
+7. ESPECIFICAÇÃO DE SOFTWARE, SCHEMAS DE DADOS & IMPLEMENTAÇÃO
+   7.1. Modelagem Relacional & Vetorial (PostgreSQL 16 + pgvector)
+   7.2. Protocolo MG-RAW-01 e Ingestão Imutável
+   7.3. Ingestion Parser & Filtro Anti-Contaminação (FastAPI / Pydantic)
+   7.4. Mecanismo Confirmation Gate & Trava de Ações Críticas
+   7.5. Conector MCP Multimodal (Model Context Protocol / JSON-RPC 2.0)
+   7.6. Multi-Tenant Memory Engine & Row-Level Security (RLS)
+8. LABORATÓRIO OPERACIONAL PILOTO: PARMÊ LAB & VALIDAÇÃO ECONÔMICA
+9. A REGRA ECONÔMICA SUBORDINANTE E O BROKER PAY-AS-YOU-GO
+10. SUÍTE ADVERSARIAL DE TESTES (50 TESTES OTIMIZZAI / MEM-001 / MEM-002)
+11. STATUS ATUAL DO REPOSITÓRIO LOCAL, BASELINE VALIDADA E PRÓXIMOS PASSOS
+
+================================================================================
+1. VISÃO FUNDADORA, FILOSOFIA E MANIFESTO DO MIND GATEWAY
+================================================================================
+O Mind Gateway é definido como:
+"THE GATEWAY BETWEEN YOUR MIND AND THE INTELLIGENCE OF THE WORLD."
+(O gateway entre a sua mente e a inteligência do mundo).
+
+O projeto não nasceu para ser "mais um chatbot", nem um wrapper superficial de APIs, nem um assistente descartável de conversas isoladas. Ele foi concebido a partir de uma pergunta fundamental:
+
+"O que realmente muda na vida e nos negócios de uma pessoa quando ela passa a ter acesso à inteligência artificial?"
+
+A resposta tradicional do mercado foca em responder perguntas, redigir textos ou criar imagens isoladas. No entanto, o verdadeiro gargalo humano não é a falta de capacidade de processamento pontual, mas a perda da continuidade. Nossas vidas, projetos e empresas são construídos através de jornadas que duram meses ou anos: abrir uma empresa, desenvolver um produto, criar um cardápio, expandir uma operação.
+
+Durante essas jornadas, as pessoas e organizações mudam. Ideias se fragmentam em anotações de voz, mensagens de WhatsApp, planilhas esparsas e reuniões. A cada nova interação com uma IA convencional, o utilizador é forçado a reexplicar seu contexto do zero. O Mind Gateway surge para ser a ponte (Gateway) que preserva o fio condutor da trajetória humana:
+- Não pensa no lugar da pessoa;
+- Não decide pela pessoa;
+- Não aprisiona;
+- Acompanha a evolução das intenções, decisões e resultados ao longo do tempo.
+
+O Ciclo Vital do Mind Gateway:
+PESSOA -> INTENÇÃO -> COMPREENSÃO DO CONTEXTO -> MEMÓRIA (PIG) -> ORQUESTRAÇÃO -> EXECUÇÃO -> RESULTADO REAL -> APRENDIZADO -> MEMÓRIA VIVA
+
+A Unidade Fundamental de Valor não é a conversa e nem a tarefa, mas a DECISÃO:
+"Uma decisão futura melhorada por uma experiência passada."
+
+================================================================================
+2. O PROBLEMA DA FRAGMENTAÇÃO E O FOSSO COMPETITIVO (MOAT)
+================================================================================
+O mercado atual de Inteligência Artificial sofre de abundância de inteligência fragmentada e escassez de contexto unificado. Existem centenas de LLMs altamente capazes (GPT-4o, Claude 3.7 Sonnet, Gemini 1.5 Pro, Llama 3), ferramentas iPaaS (n8n, Make), bancos de dados e CRMs.
+
+Tentar reconstruir essas infraestruturas seria um erro estratégico clássico de sobre-engenharia (Anti-Commodity Principle). O n8n já é excelente em automação determinística; os provedores de nuvem já resolvem pipelines de dados.
+
+O diferencial proprietário (Moat) do Mind Gateway reside em três pilares:
+1. Context Advantage:
+   Delta de Valor = (Qualidade da Decisão COM Contexto Pessoal/Operacional) - (Qualidade da Decisão SEM Contexto).
+2. Decision Continuity & Lineage:
+   Rastrear genealogicamente por que cada decisão foi tomada, quais premissas foram adotadas, qual era a previsão de retorno e o que de fato aconteceu no mundo físico (confronto de caixa real).
+3. Arbitragem e Broker Econômico (Pay-As-You-Go):
+   Desacoplar o usuário de dezenas de assinaturas fixas mensais de IA, roteando cada subtarefa para o modelo mais eficiente em custo/desempenho e exibindo orçamentos prévios de execução.
+
+================================================================================
+3. TAXONOMIA EPISTEMOLÓGICA E RIGOR METODOLÓGICO (VOLUME 1)
+================================================================================
+O ecossistema Mind Gateway é regido por uma constituição rigorosa contra alucinações e contaminações conceituais. Qualquer dado processado ou emitido pelo sistema deve ser estritamente categorizado em uma das seguintes classes epistemológicas:
+
+- [FATO]: Evidência documental, contábil ou empírica verificável (ex: CMV real de R$ 12,50; nota fiscal emitida).
+- [INFERÊNCIA]: Conclusão lógica derivada diretamente de fatos demonstrados.
+- [HIPÓTESE]: Premissa não testada ou suposição estratégica (trava de confiança máxima de 0.50).
+- [DECISÃO]: Escolha formal registrada por autoridade humana competente.
+- [OPINIÃO / PREFERÊNCIA]: Julgamento de valor subjetivo sem necessidade de comprovação matemática.
+- [RESTRIÇÃO DE RUNTIME]: Limitação técnica do ambiente de execução (ex: interface textual não renderiza fisicamente vídeos MP4 nativos sem API externa).
+
+Regra Mestra Epistemológica:
+Nunca tratar hipótese como fato.
+Nunca confundir especificação com implementação.
+Nunca confundir simulação com resultado empírico de caixa.
+
+================================================================================
+4. ARQUITETURA MODULAR DE 7 CAMADAS DO COGNITIVE OS
+================================================================================
+O sistema operacional cognitivo do Mind Gateway é estruturado em 7 camadas modulares e desacopladas:
+
+1. Interaction Layer (Camada de Captura e Interface):
+   Recebe fluxos de pensamento em voz alta, texto desestruturado, transcrições brutas (TDAH/pensamento associativo) via mobile (Xiaomi/Termux/Webhooks) sem censura ou perda.
+
+2. Intent Understanding Engine (Motor de Intenção):
+   Processa o fluxo bruto, isola ruídos, extrai entidades, restrições e objetivos usando parsers com tipagem forte (Pydantic).
+
+3. Personal Intelligence Graph (PIG - Camada de Contexto & Memória):
+   Grafo semântico e relacional que mantém personas, histórico financeiro, regras de negócio, metas de curto/longo prazo e árvore de decisões.
+
+4. Orchestration Layer / Dynamic Router:
+   Analisa a complexidade da demanda e escolhe o recurso ótimo (Tier 1: Haiku/Llama-70B para triagem; Tier 2: Sonnet/GPT-4o para código e raciocínio; Tier 3: Opus/o3 para arquitetura avançada).
+
+5. Intelligence Network (Rede de Inteligências e Agentes):
+   Modelos especializados atuando sob papéis funcionais (Agente Financeiro, Agente de Growth, Agente de Engenharia, Agente Auditor).
+
+6. Execution Layer & Confirmation Gates:
+   Ponte de despacho para infraestruturas como n8n, webhooks de mensageria (WhatsApp Business API), PDV/iFood e servidores MCP. Ações críticas exigem token de autorização humana explícita (HUMAN-IN-THE-LOOP).
+
+7. Feedback Loop & Decision Calibration:
+   Captura os desfechos reais da ação no mundo exterior (faturamento de caixa, retenção, falhas), confronta com a hipótese inicial e retroalimenta o PIG.
+
+================================================================================
+5. O MOTOR DE GOVERNANÇA E OPERAÇÃO: OTIMIZZAI V2.2 & PROTOCOLOS R20–R24
+================================================================================
+Enquanto o Mind Gateway é a infraestrutura e o sistema operacional, o OTIMIZZAI é o motor comportamental, metodológico e de governança cognitiva. Ele aplica os protocolos inegociáveis de auditoria:
+
+- Protocolo R20 (Re-acesso às Fontes Primárias):
+  Em diálogos longos ou encadeamentos de agentes, força a releitura direta dos documentos primários imutáveis (raw_inputs) para evitar degradação de contexto.
+- Protocolo R21 (Rigor Aritmético e Financeiro):
+  Proíbe arredondamentos silenciosos, desvios de centavos ou aproximações informais em cálculos de CMV, margens e conciliações contábeis.
+- Protocolo R22 (Separação Categórica):
+  Impede estritamente a fusão entre projeções/estimativas de faturamento e receitas concretamente liquidadas em caixa.
+- Protocolo R23 (Rastreabilidade e Lineage Unívoco):
+  Exige que qualquer conclusão, preço ou diretriz mantenha o identificador UUID da fonte original (raw_input_id).
+- Protocolo R24 (Propagação e Isolamento de Incerteza):
+  Se parâmetros vitais estiverem ausentes, o sistema é obrigado a retornar [INDETERMINADO] ou [DADOS INSUFICIENTES], bloqueando execuções baseadas em premissas cegas.
+
+Ordem de Execução Cognitiva:
+Entrada Bruta -> [R20: Re-checagem] -> [R24: Lacunas] -> [R22: Separação Fato/Projeção] -> [R21: Rigor Aritmético] -> [R23: Lineage UUID] -> Decisão/Output
+
+================================================================================
+6. O GRAFO DE INTELIGÊNCIA PESSOAL E EMPRESARIAL (PIG)
+================================================================================
+O Personal Intelligence Graph (PIG) é o núcleo de conhecimento persistente. Diferente de um RAG ingênuo que apenas busca similaridade vetorial em pedaços de texto, o PIG organiza o conhecimento em grafos conceituais e temporais:
+
+- Decision Lineage: A árvore genealógica de cada escolha de produto, branding e tecnologia.
+- Decision Half-Life (Meia-Vida da Decisão): Monitora a validade temporal das premissas (ex: custo de farinha vence em 30 dias; diretriz de marca dura 2 anos).
+- Decision Debt (Dívida Decisória): Mapeia decisões antigas tomadas sem evidência empírica que precisam de auditoria periódica.
+- Experiment Memory: Repositório estruturado de testes (hipótese -> canal -> custo -> resultado real de conversão).
+
+================================================================================
+7. ESPECIFICAÇÃO DE SOFTWARE, SCHEMAS DE DADOS & IMPLEMENTAÇÃO
+================================================================================
+
+7.1. Modelagem Relacional & Vetorial (PostgreSQL 16 + pgvector)
+A persistência da camada de memória utiliza PostgreSQL 16 com extensão vetorial (pgvector) e índices HNSW para busca híbrida (full-text search + cosine similarity).
+
+Estrutura SQL DDL Central:
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "vector";
+
+CREATE TABLE raw_inputs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    raw_content TEXT NOT NULL,
+    received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    is_archived BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE memory_objects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL,
+    raw_input_id UUID REFERENCES raw_inputs(id) ON DELETE RESTRICT,
+    category VARCHAR(30) NOT NULL,
+    content TEXT NOT NULL,
+    confidence NUMERIC(3,2) NOT NULL CHECK (confidence >= 0.00 AND confidence <= 1.00),
+    is_sensitive_health BOOLEAN DEFAULT FALSE,
+    embedding vector(1536),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    half_life_days INT DEFAULT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
+);
+
+CREATE INDEX idx_raw_inputs_tenant ON raw_inputs(tenant_id);
+CREATE INDEX idx_memory_category ON memory_objects(category);
+CREATE INDEX idx_memory_embedding_hnsw ON memory_objects USING hnsw (embedding vector_cosine_ops);
+
+7.2. Protocolo MG-RAW-01 e Ingestão Imutável
+Princípio da Não-Perda de Pensamento: Toda mensagem, áudio ou transcrição inserida no sistema é salva primeiro em tabela append-only (raw_inputs). Nenhuma compressão ou resumo prévio de IA pode apagar o dado original.
+
+7.3. Ingestion Parser & Filtro Anti-Contaminação (FastAPI / Pydantic)
+Implementação em Python com FastAPI para ingestão de dados e imposição da trava de confiança:
+
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, Field
+import uuid
+
+app = FastAPI(title="Mind Gateway Core API", version="0.3.3")
+
+class IngestPayload(BaseModel):
+    tenant_id: uuid.UUID
+    source: str
+    raw_content: str
+    is_sensitive_health: bool = False
+
+@app.post("/api/v1/ingest", status_code=status.HTTP_201_CREATED)
+async def ingest_raw_input(payload: IngestPayload):
+    return {"status": "INGESTED", "raw_input_id": str(uuid.uuid4())}
+
+7.4. Mecanismo Confirmation Gate & Trava de Ações Críticas
+Nenhuma ação com impacto real de caixa, envio de mensagens em lote ou alteração pública é executada sem confirmação explícita.
+
+Modelo de risco e token:
+from enum import Enum
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+import secrets
+
+class ActionRisk(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+class ConfirmationToken(BaseModel):
+    token: str
+    tenant_id: uuid.UUID
+    action_hash: str
+    risk: ActionRisk
+    issued_at: datetime
+    expires_at: datetime
+    used: bool = False
+
+def request_confirmation(tenant_id, action_description, risk):
+    if risk in (ActionRisk.HIGH, ActionRisk.CRITICAL):
+        return {
+            "status": "AWAITING_HUMAN_CONFIRMATION",
+            "token": secrets.token_urlsafe(32),
+            "risk": risk.value,
+            "expires_in_seconds": 300,
+        }
+    return {"status": "AUTO_APPROVED", "risk": risk.value}
+
+Regras do Gate:
+- Ação HIGH exige token único (single-use) com TTL de 300s.
+- Ação CRITICAL exige dupla confirmação (dois operadores distintos).
+- Toda confirmação é auditada com UUID, timestamp e assinatura do operador.
+
+7.5. Conector MCP Multimodal (Model Context Protocol / JSON-RPC 2.0)
+Especificação para integrar a interface textual com APIs externas de geração de vídeo/imagem (Runway, Sora, Luma).
+
+Requisição:
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "method": "tools/call",
+  "params": {
+    "name": "video.generate",
+    "arguments": {
+      "prompt": "Parmê Burger close-up com queijo derretendo",
+      "duration_seconds": 8,
+      "aspect_ratio": "9:16",
+      "budget_brl": 0.50
+    }
+  }
+}
+
+Resposta:
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "result": {
+    "asset_id": "vid_abc123",
+    "status": "queued",
+    "estimated_cost_brl": 0.42,
+    "estimated_eta_seconds": 35
+  }
+}
+
+7.6. Multi-Tenant Memory Engine & Row-Level Security (RLS)
+Garante que múltiplos negócios operem no mesmo banco sem contaminação cruzada de dados.
+
+ALTER TABLE raw_inputs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_objects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_raw ON raw_inputs
+    USING (tenant_id = current_setting('app.current_tenant')::uuid);
+
+CREATE POLICY tenant_isolation_memory ON memory_objects
+    USING (tenant_id = current_setting('app.current_tenant')::uuid);
+
+A variável de sessão app.current_tenant é definida no início de cada requisição pelo backend (SET LOCAL app.current_tenant = '<uuid>').
+
+================================================================================
+8. LABORATÓRIO OPERACIONAL PILOTO: PARMÊ LAB & VALIDAÇÃO ECONÔMICA
+================================================================================
+O primeiro laboratório real é a operação gastronômica do restaurante Parmê:
+ * Produto Principal: Combo Parmê Burger.
+ * Preço Base: R$ 35,00.
+ * CMV / COGS: R$ 12,50 (35,7%).
+ * Margem de Contribuição Bruta: R$ 22,50 (64,3%).
+ * Campanha Piloto: Oferta de R$ 29,75 (15% off) com margem retida de 58%, gerando lucro incremental auditado no caixa.
+
+================================================================================
+9. A REGRA ECONÔMICA SUBORDINANTE E O BROKER PAY-AS-YOU-GO
+================================================================================
+Ordem: DINHEIRO -> SERVIÇO -> PRODUTO -> SOFTWARE -> PLATAFORMA -> INFRAESTRUTURA.
+
+O Broker Pay-As-You-Go calcula estimativas de custo em centavos e exibe orçamento prévio de execução antes de despachar subtarefas aos modelos ótimos.
+
+================================================================================
+10. SUÍTE ADVERSARIAL DE TESTES (50 TESTES OTIMIZZAI / MEM-001 / MEM-002)
+================================================================================
+
+A) INGESTÃO E IMUTABILIDADE (MEM-001) — 10 testes
+01. Ingestão de áudio transcrito (TDAH associativo) sem perda de conteúdo.
+02. Texto bruto é salvo em raw_inputs ANTES de qualquer resumo por IA.
+03. Tentativa de UPDATE em raw_inputs deve falhar (append-only).
+04. Tentativa de DELETE em raw_inputs deve falhar.
+05. Ingestão duplicada gera IDs distintos (uuid v4).
+06. Payload vazio retorna HTTP 422.
+07. tenant_id inválido retorna HTTP 422.
+08. Caracteres especiais (UTF-8, emojis, acentos) preservados byte a byte.
+09. metadata JSONB malformado é rejeitado.
+10. received_at sempre com timezone (UTC).
+
+B) EPISTEMOLOGIA E CONFIANÇA (MEM-002) — 10 testes
+11. [HIPÓTESE] não pode ter confidence > 0.50.
+12. [FATO] sem raw_input_id é rejeitado.
+13. [INFERÊNCIA] sem [FATO] de origem é rejeitada.
+14. Sistema retorna [INDETERMINADO] quando falta parâmetro vital (R24).
+15. R24 bloqueia execução (não despacha para Execution Layer).
+16. Projeção não pode ser rotulada como [FATO] (R22).
+17. Caixa real não pode ser rotulado como [HIPÓTESE] (R22).
+18. Opinião não pode ser elevada a [DECISÃO].
+19. [RESTRIÇÃO DE RUNTIME] é reconhecida e propagada ao output.
+20. [DECISÃO] exige autoridade humana registrada.
+
+C) FINANCEIRO E RIGOR ARITMÉTICO (R21) — 10 testes
+21. CMV R$ 12,50 sobre preço R$ 35,00 => margem 64,3% exata.
+22. R21 proíbe arredondamento de centavos em conciliação.
+23. Preço R$ 29,75 (15% off) mantém margem 58% (±0,1%).
+24. Soma de itens do carrinho bate ao centavo.
+25. Fechamento de caixa diário concilia com extrato.
+26. Projeção de faturamento NÃO é somada ao caixa real.
+27. Cupom de desconto não gera margem negativa sem alerta.
+28. Taxa iFood (27%) recalculada corretamente.
+29. Quebra de estoque detectada e reportada com lineage UUID.
+30. R22 separa receita liquidada de receita prevista.
+
+D) MULTI-TENANT E SEGURANÇA (RLS) — 10 testes
+31. Tenant A não lê raw_inputs de Tenant B.
+32. Tenant A não lê memory_objects de Tenant B.
+33. RLS ativa em todas as tabelas sensíveis.
+34. Query sem app.current_tenant retorna conjunto vazio.
+35. service_role bypassa RLS apenas em jobs internos auditados.
+36. Embedding de Tenant A não aparece em busca de Tenant B.
+37. Backup mantém isolamento por tenant.
+38. Logs de auditoria particionados por tenant.
+39. Deleção de tenant é soft delete com retenção legal.
+40. Exportação LGPD por tenant funciona.
+
+E) CONFIRMATION GATE E AÇÕES CRÍTICAS — 10 testes
+41. Ação HIGH sem token retorna HTTP 403.
+42. Token expirado retorna HTTP 403.
+43. Token reutilizado (single-use) retorna HTTP 403.
+44. Ação CRITICAL exige dupla confirmação de operadores distintos.
+45. Disparo em massa WhatsApp exige gate.
+46. Alteração de preço público exige gate.
+47. Envio de pagamento exige gate.
+48. Token tem TTL de 300s.
+49. Toda confirmação é auditada (quem, quando, o quê).
+50. Tentativa de replay attack é detectada e bloqueada.
+
+================================================================================
+11. STATUS ATUAL DO REPOSITÓRIO LOCAL, BASELINE VALIDADA E PRÓXIMOS PASSOS
+================================================================================
+ * Baseline MG-BASE-06 congelada em v0.3.3.
+ * Checklist mestre de 12 passos em andamento ativo para migração para nuvem.
+ * Backend: Railway (FastAPI + uvicorn).
+ * Banco: Supabase (PostgreSQL 16 + pgvector).
+ * Repositório: GitHub mind-gateway-engine (deploy automático via Railway).
+ * Próximo passo: rodar os 50 testes adversariais em ambiente de staging antes do go-live do Parmê Lab.
+"""
+
+# ---- escrita do arquivo (INDENTAÇÃO CORRIGIDA) ----
+output_path = "MIND_GATEWAY_MASTER_GERAL_v0.3.3.txt"
+with open(output_path, "w", encoding="utf-8") as f:
+    f.write(master_text)
+
+print(f"Arquivo gerado com sucesso: {output_path}")
+print(f"Tamanho: {len(master_text)} caracteres")
+print(f"Linhas: {master_text.count(chr(10)) + 1}")
+
