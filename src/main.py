@@ -487,37 +487,100 @@ async def record_decision_calibration(req: CalibrationRequest):
     if not pool:
         raise HTTPException(status_code=503, detail="Banco de dados não conectado.")
     abs_deviation = abs(req.expected_value - req.realized_value).quantize(Decimal("0.01"))
+    pct_deviation = (
+        ((abs_deviation / abs(req.expected_value)) * Decimal("100")).quantize(Decimal("0.01"))
+        if req.expected_value != 0
+        else Decimal("0.00")
+    )
+    drift_alert = pct_deviation > Decimal("30.00")
     cal_id = uuid.uuid4()
     now = datetime.now(timezone.utc)
+    note_text = req.notes or f"Calibracao {req.metric_name}"
+
     async with pool.acquire() as conn:
         col_rows = await conn.fetch(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'decision_calibrations'"
+            """
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'decision_calibrations'
+            ORDER BY ordinal_position
+            """
         )
-        available = {r["column_name"] for r in col_rows}
-        candidate = {
+        semantic_map = {
             "id": cal_id,
             "tenant_id": req.tenant_id,
             "memory_object_id": req.memory_object_id,
             "decision_id": req.memory_object_id,
+            "action_id": req.memory_object_id,
             "metric_name": req.metric_name,
+            "decision_name": req.metric_name,
+            "decision_title": req.metric_name,
             "hypothesis_summary": req.metric_name,
+            "context_summary": req.metric_name,
             "expected_value": req.expected_value,
+            "expected_outcome": req.expected_value,
+            "predicted_value": req.expected_value,
             "realized_value": req.realized_value,
+            "realized_outcome": req.realized_value,
             "actual_value": req.realized_value,
+            "observed_value": req.realized_value,
             "absolute_error": abs_deviation,
+            "absolute_deviation": abs_deviation,
             "deviation": abs_deviation,
+            "deviation_amount": abs_deviation,
+            "error_amount": abs_deviation,
             "delta": abs_deviation,
-            "notes": req.notes or f"Calibracao {req.metric_name}",
+            "deviation_percent": pct_deviation,
+            "deviation_pct": pct_deviation,
+            "error_pct": pct_deviation,
+            "percentage_error": pct_deviation,
+            "requires_reassessment": drift_alert,
+            "drift_triggered": drift_alert,
+            "notes": note_text,
+            "lesson_learned": note_text,
+            "lessons_learned": note_text,
             "calibrated_at": now,
+            "evaluated_at": now,
             "created_at": now,
         }
-        cols = [k for k in candidate if k in available and candidate[k] is not None]
-        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
-        values = [candidate[k] for k in cols]
+
+        cols_to_insert = []
+        values = []
+        for r in col_rows:
+            cname = r["column_name"]
+            dtype = r["data_type"]
+            nullable = r["is_nullable"]
+            default = r["column_default"]
+            has_val = cname in semantic_map and semantic_map[cname] is not None
+
+            if not has_val and (nullable == "YES" or default is not None):
+                continue
+
+            raw_val = semantic_map.get(cname)
+            if dtype == "uuid":
+                val = raw_val if isinstance(raw_val, uuid.UUID) else uuid.uuid4()
+            elif dtype in ("numeric", "decimal"):
+                val = raw_val if isinstance(raw_val, Decimal) else Decimal(str(raw_val or "0.00"))
+            elif dtype in ("double precision", "real"):
+                val = float(raw_val) if raw_val is not None else 0.0
+            elif dtype in ("integer", "bigint", "smallint"):
+                val = int(raw_val) if raw_val is not None else 0
+            elif dtype == "boolean":
+                val = bool(raw_val) if raw_val is not None else False
+            elif "timestamp" in dtype:
+                val = raw_val if isinstance(raw_val, datetime) else now
+            else:
+                val = str(raw_val) if raw_val is not None else note_text
+
+            cols_to_insert.append(cname)
+            values.append(val)
+
+        placeholders = ", ".join(f"${i+1}" for i in range(len(cols_to_insert)))
         await conn.execute(
-            f"INSERT INTO decision_calibrations ({', '.join(cols)}) VALUES ({placeholders})",
+            f"INSERT INTO decision_calibrations ({', '.join(cols_to_insert)}) VALUES ({placeholders})",
             *values,
         )
+
     return {
         "status": "CALIBRATED",
         "calibration_id": str(cal_id),
@@ -525,5 +588,7 @@ async def record_decision_calibration(req: CalibrationRequest):
         "expected_value": str(req.expected_value),
         "realized_value": str(req.realized_value),
         "absolute_deviation": str(abs_deviation),
+        "deviation_percent": str(pct_deviation),
+        "drift_alert_triggered": drift_alert,
         "persisted": True,
     }
