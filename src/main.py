@@ -629,6 +629,40 @@ async def list_pending_gate_actions(
     }
 
 
+
+@app.get("/manifest.json")
+async def pwa_manifest():
+    return {
+        "name": "Mind Gateway OS",
+        "short_name": "MindGateway",
+        "description": "Sistema Operacional Cognitivo e Governanca de Decisoes",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#0b0f19",
+        "theme_color": "#f59e0b",
+        "icons": [
+            {
+                "src": "https://img.icons8.com/ios-filled/192/f59e0b/brain.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable"
+            },
+            {
+                "src": "https://img.icons8.com/ios-filled/512/f59e0b/brain.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    }
+
+@app.get("/sw.js")
+async def pwa_service_worker():
+    js = "self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('fetch', () => {});"
+    return Response(content=js, media_type="application/javascript")
+
 @app.get("/", response_class=HTMLResponse)
 async def mobile_pwa_dashboard():
     return """<!DOCTYPE html>
@@ -661,6 +695,7 @@ async def mobile_pwa_dashboard():
   .item { border-bottom:1px solid var(--border); padding:10px 0; }
   .item:last-child { border-bottom:none; }
 </style>
+<link rel="manifest" href="/manifest.json">
 </head>
 <body>
 <header>
@@ -803,6 +838,7 @@ async function sendCalibrate() {
 }
 
 checkHealth();
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }
 </script>
 </body>
 </html>"""
