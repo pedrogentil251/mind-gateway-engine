@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/orchestrate", tags=["Broker Pay-As-You-Go"])
@@ -65,6 +65,123 @@ class EstimateRequest(BaseModel):
 class ExecuteRequest(BaseModel):
     quote_id: str
     approval_token: str = Field(..., min_length=4)
+
+
+def _diagnose_openrouter_runtime() -> Dict[str, Any]:
+    raw_key = os.getenv("OPENROUTER_API_KEY", "")
+    api_key = raw_key.strip()
+
+    if not api_key:
+        return {
+            "ok": False,
+            "code": "CHAVE_AUSENTE",
+            "title": "Variável OPENROUTER_API_KEY não configurada no Railway",
+            "cause": "O servidor no Railway não encontrou nenhuma chave definida na variável de ambiente OPENROUTER_API_KEY.",
+            "action": "Abra o Railway -> Variables -> adicione OPENROUTER_API_KEY com a chave gerada em openrouter.ai/keys e aguarde o reinício.",
+        }
+
+    if not api_key.startswith("sk-or-"):
+        return {
+            "ok": False,
+            "code": "FORMATO_CHAVE_INVALIDO",
+            "title": "Formato inválido na variável OPENROUTER_API_KEY",
+            "cause": f"O valor configurado começa com '{api_key[:6]}...', mas chaves válidas do OpenRouter começam com 'sk-or-'.",
+            "action": "Edite OPENROUTER_API_KEY no Railway removendo aspas, espaços extras ou colando a chave correta (sk-or-v1-...).",
+        }
+
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/auth/key",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://web-production-bc7ad0f9.up.railway.app",
+            "X-Title": "Mind Gateway OS Diagnostic",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            data = payload.get("data", payload)
+            limit = data.get("limit")
+            usage = data.get("usage", 0) or 0
+            limit_remaining = data.get("limit_remaining")
+            is_free_tier = data.get("is_free_tier", False)
+
+            if limit_remaining is not None and float(limit_remaining) <= 0:
+                return {
+                    "ok": False,
+                    "code": "LIMITE_CHAVE_ESGOTADO",
+                    "title": "Limite de gasto da chave OpenRouter atingido",
+                    "cause": f"A chave está ativa, mas o limite configurado nela ({limit} US$) já foi totalmente consumido (uso atual: {usage} US$).",
+                    "action": "Acesse openrouter.ai/keys para aumentar ou remover o limite de gasto desta chave.",
+                }
+
+            return {
+                "ok": True,
+                "code": "CONEXAO_ATIVA",
+                "title": "Chave OpenRouter autenticada com sucesso",
+                "cause": "A variável OPENROUTER_API_KEY está ativa e reconhecida pela API do OpenRouter.",
+                "action": "Pronto para executar chamadas.",
+                "meta": {
+                    "label": data.get("label"),
+                    "usage_usd": usage,
+                    "limit_usd": limit,
+                    "limit_remaining_usd": limit_remaining,
+                    "is_free_tier": is_free_tier,
+                },
+            }
+    except urllib.error.HTTPError as http_err:
+        err_body = ""
+        try:
+            err_body = http_err.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+
+        if http_err.code == 401:
+            return {
+                "ok": False,
+                "code": "CHAVE_REVOGADA_OU_INVALIDA",
+                "title": "Chave OpenRouter inválida, revogada ou expirada (HTTP 401)",
+                "cause": "O OpenRouter recusou a autenticação da chave atual. Ela foi revogada no painel, expirou ou foi copiada incompleta.",
+                "action": "Gere uma nova chave em openrouter.ai/keys, atualize OPENROUTER_API_KEY no Railway e teste novamente.",
+                "raw_detail": err_body[:240],
+            }
+        if http_err.code == 402:
+            return {
+                "ok": False,
+                "code": "SALDO_ZERADO",
+                "title": "Saldo zerado ou insuficiente no OpenRouter (HTTP 402)",
+                "cause": "A chave é válida, mas a conta não possui créditos suficientes para despachar modelos pagos.",
+                "action": "Adicione créditos em openrouter.ai/credits para liberar o consumo Pay-As-You-Go.",
+                "raw_detail": err_body[:240],
+            }
+        return {
+            "ok": False,
+            "code": f"OPENROUTER_HTTP_{http_err.code}",
+            "title": f"Erro HTTP {http_err.code} ao validar chave no OpenRouter",
+            "cause": err_body[:240] or str(http_err),
+            "action": "Verifique o status do OpenRouter e tente novamente em instantes.",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "code": "FALHA_REDE_OPENROUTER",
+            "title": "Falha de rede ao consultar o OpenRouter",
+            "cause": str(exc),
+            "action": "Verifique a conexão de saída do servidor no Railway e clique em Testar Conexão.",
+        }
+
+
+@router.get("/health-check")
+async def orchestrate_health_check():
+    diag = _diagnose_openrouter_runtime()
+    return {
+        "epistemic_tag": "FATO",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "circuit_breaker_failures": CIRCUIT_BREAKER_FAILURES,
+        "diagnostic": diag,
+    }
 
 
 def _classify_complexity(prompt: str) -> str:
@@ -131,9 +248,9 @@ def _fetch_pig_context(limit: int = 5) -> str:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT category, content, confidence
+            SELECT memory_type, category, extracted_summary, confidence_score
             FROM memory_objects
-            WHERE COALESCE(is_archived, FALSE) = FALSE
+            WHERE status = 'ACTIVE'
             ORDER BY created_at DESC
             LIMIT %s
             """,
@@ -144,7 +261,9 @@ def _fetch_pig_context(limit: int = 5) -> str:
         conn.close()
         if not rows:
             return ""
-        return "\n".join(f"[{r[0]} | conf={r[2]}] {r[1]}" for r in rows)
+        return "\n".join(
+            f"[{r[0]}/{r[1]} | conf={r[3]}] {r[2]}" for r in rows
+        )
     except Exception:
         try:
             conn.close()
@@ -252,6 +371,8 @@ async def estimate_orchestration(req: EstimateRequest):
     if CIRCUIT_BREAKER_FAILURES.get(primary_model, 0) >= 3:
         primary_model = spec["fallback"]
 
+    diag = _diagnose_openrouter_runtime()
+
     quote_payload = {
         "quote_id": quote_id,
         "status": "PENDING_BUDGET_APPROVAL",
@@ -269,7 +390,8 @@ async def estimate_orchestration(req: EstimateRequest):
         "expires_at": expires_at.isoformat(),
         "raw_prompt": req.prompt.strip(),
         "compiled_prompt": full_prompt,
-        "api_key_configured": bool(os.getenv("OPENROUTER_API_KEY")),
+        "api_key_configured": diag["ok"],
+        "diagnostic": diag,
     }
     PENDING_QUOTES[quote_id] = quote_payload
     return {k: v for k, v in quote_payload.items() if k != "compiled_prompt"}
@@ -300,8 +422,16 @@ def _call_openrouter(model: str, compiled_prompt: str, api_key: str) -> Dict[str
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST"
     )
-    with urllib.request.urlopen(req, timeout=55) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=55) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as http_err:
+        err_body = ""
+        try:
+            err_body = http_err.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {http_err.code}: {err_body or http_err.reason}")
 
 
 @router.post("/execute")
@@ -317,13 +447,17 @@ async def execute_orchestration(req: ExecuteRequest):
         PENDING_QUOTES.pop(req.quote_id, None)
         raise HTTPException(status_code=410, detail="Budget Gate expirado (TTL 30 min). Gere nova estimativa.")
 
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if not api_key:
-        raise HTTPException(
+    diag = _diagnose_openrouter_runtime()
+    if not diag["ok"]:
+        return JSONResponse(
             status_code=503,
-            detail="[RESTRIÇÃO DE RUNTIME] Variável OPENROUTER_API_KEY não configurada no Railway.",
+            content={
+                "detail": f"[{diag['code']}] {diag['title']} — {diag['cause']}",
+                "diagnostic": diag,
+            },
         )
 
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     spec = MODEL_CATALOG[quote["tier_key"]]
     primary = quote["primary_model"]
     fallback = quote["fallback_model"]
@@ -341,9 +475,37 @@ async def execute_orchestration(req: ExecuteRequest):
         try:
             raw_resp = _call_openrouter(fallback, quote["compiled_prompt"], api_key)
         except Exception as fallback_err:
-            raise HTTPException(
+            err_str = f"{primary_err} | {fallback_err}"
+            if "402" in err_str or "credits" in err_str.lower() or "afford" in err_str.lower():
+                runtime_diag = {
+                    "ok": False,
+                    "code": "SALDO_ZERADO",
+                    "title": "Saldo insuficiente no OpenRouter para concluir a inferência (HTTP 402)",
+                    "cause": "A chave é válida, mas o saldo disponível não cobre a reserva máxima de tokens deste modelo.",
+                    "action": "Adicione créditos em openrouter.ai/credits ou selecione o Tier 1 (mais econômico).",
+                }
+            elif "401" in err_str:
+                runtime_diag = {
+                    "ok": False,
+                    "code": "CHAVE_REVOGADA_OU_INVALIDA",
+                    "title": "Falha de autenticação no OpenRouter (HTTP 401)",
+                    "cause": "A chave configurada foi recusada durante o despacho aos modelos.",
+                    "action": "Gere uma nova chave em openrouter.ai/keys e atualize OPENROUTER_API_KEY no Railway.",
+                }
+            else:
+                runtime_diag = {
+                    "ok": False,
+                    "code": "CIRCUIT_BREAKER_OPEN",
+                    "title": "Circuit Breaker aberto: falha no modelo primário e no fallback",
+                    "cause": f"Primário ({primary}): {primary_err} | Fallback ({fallback}): {fallback_err}",
+                    "action": "Aguarde alguns segundos e clique em Testar Conexão OpenRouter para verificar o status.",
+                }
+            return JSONResponse(
                 status_code=502,
-                detail=f"Circuit Breaker aberto: falha no primário ({primary_err}) e fallback ({fallback_err}).",
+                content={
+                    "detail": f"[{runtime_diag['code']}] {runtime_diag['title']}",
+                    "diagnostic": runtime_diag,
+                },
             )
 
     latency_ms = int((time.time() - start_ms) * 1000)
@@ -469,8 +631,26 @@ BROKER_MOBILE_INJECTION = """
   }
   .mg-b-btn-amber { background: #f59e0b; color: #09090b; }
   .mg-b-btn-green { background: #10b981; color: #052e16; }
+  .mg-b-btn-outline { background: #18181d; color: #e4e4e7; border: 1px solid #3f3f46; }
   .mg-b-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
   .mg-b-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .mg-b-diag-box {
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .mg-b-diag-err {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+  }
+  .mg-b-diag-ok {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    color: #a7f3d0;
+  }
 </style>
 
 <button id="mg-broker-fab" onclick="mgToggleBroker(true)">⚡ 4. Broker Pay-As-You-Go</button>
@@ -479,7 +659,7 @@ BROKER_MOBILE_INJECTION = """
   <div class="mg-b-row" style="margin-bottom:12px;">
     <div>
       <div style="font-size:17px;font-weight:800;color:#fbbf24;">4. Broker Pay-As-You-Go</div>
-      <div style="font-size:12px;color:#a1a1aa;">Arbitragem Multi-IA & Budget Gate (v0.6.0)</div>
+      <div style="font-size:12px;color:#a1a1aa;">Arbitragem Multi-IA & Autodiagnóstico (v0.6.1)</div>
     </div>
     <button onclick="mgToggleBroker(false)" style="background:#27272a;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">✕ Fechar</button>
   </div>
@@ -507,6 +687,15 @@ BROKER_MOBILE_INJECTION = """
     <button class="mg-b-btn mg-b-btn-amber" onclick="mgEstimateBroker()">Calcular Orçamento (Budget Gate)</button>
   </div>
 
+  <div id="mg-b-diag-panel" class="mg-b-card" style="display:none;">
+    <div class="mg-b-row">
+      <span id="mg-b-diag-code" class="mg-b-badge">DIAGNÓSTICO</span>
+      <span style="font-size:11px;color:#a1a1aa;">Autodiagnóstico Runtime</span>
+    </div>
+    <div id="mg-b-diag-body" class="mg-b-diag-box mg-b-diag-err"></div>
+    <button id="mg-b-health-btn" class="mg-b-btn mg-b-btn-outline" onclick="mgCheckOpenRouterHealth()">🔄 Testar Conexão OpenRouter Agora</button>
+  </div>
+
   <div id="mg-b-quote-box" class="mg-b-card" style="display:none;border-color:#f59e0b;">
     <div class="mg-b-row">
       <span class="mg-b-badge">BUDGET GATE • [ESTIMATIVA]</span>
@@ -520,9 +709,6 @@ BROKER_MOBILE_INJECTION = """
       <div style="font-size:16px;margin-top:6px;color:#34d399;">
         <strong>Custo Previsto:</strong> R$ <span id="mg-b-q-brl"></span> (<span id="mg-b-q-usd"></span> US$)
       </div>
-    </div>
-    <div id="mg-b-key-warn" style="display:none;margin-top:8px;padding:8px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;font-size:12px;">
-      ⚠️ Configure OPENROUTER_API_KEY nas variáveis do Railway para disparar chamadas reais.
     </div>
     <button id="mg-b-exec-btn" class="mg-b-btn mg-b-btn-green" onclick="mgExecuteBroker()">✅ AUTORIZAR E EXECUTAR EM 1 TOQUE</button>
   </div>
@@ -542,6 +728,52 @@ BROKER_MOBILE_INJECTION = """
 
   function mgToggleBroker(open) {
     document.getElementById('mg-broker-drawer').style.display = open ? 'block' : 'none';
+  }
+
+  function mgRenderDiagnostic(diag) {
+    const panel = document.getElementById('mg-b-diag-panel');
+    if (!diag) {
+      panel.style.display = 'none';
+      return;
+    }
+    const badge = document.getElementById('mg-b-diag-code');
+    const body = document.getElementById('mg-b-diag-body');
+    panel.style.display = 'block';
+    panel.style.borderColor = diag.ok ? '#10b981' : '#ef4444';
+    badge.innerText = diag.code || (diag.ok ? 'OK' : 'FALHA');
+    badge.style.color = diag.ok ? '#34d399' : '#fca5a5';
+    badge.style.borderColor = diag.ok ? '#10b981' : '#ef4444';
+    badge.style.background = diag.ok ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+    body.className = 'mg-b-diag-box ' + (diag.ok ? 'mg-b-diag-ok' : 'mg-b-diag-err');
+
+    let extra = '';
+    if (diag.ok && diag.meta) {
+      const rem = diag.meta.limit_remaining_usd !== null && diag.meta.limit_remaining_usd !== undefined
+        ? `US$ ${Number(diag.meta.limit_remaining_usd).toFixed(4)}`
+        : 'Sem teto fixo na chave';
+      extra = `<div style="margin-top:6px;font-size:12px;"><strong>Uso acumulado:</strong> US$ ${Number(diag.meta.usage_usd || 0).toFixed(4)} | <strong>Limite restante:</strong> ${rem}</div>`;
+    }
+    body.innerHTML =
+      `<div style="font-weight:800;margin-bottom:4px;">${diag.ok ? '✅' : '🚨'} ${diag.title}</div>` +
+      `<div><strong>Causa identificada:</strong> ${diag.cause}</div>` +
+      `<div style="margin-top:6px;"><strong>Como resolver:</strong> ${diag.action}</div>` +
+      extra;
+  }
+
+  async function mgCheckOpenRouterHealth() {
+    const btn = document.getElementById('mg-b-health-btn');
+    btn.disabled = true;
+    btn.innerText = '⏳ Diagnosticando OpenRouter...';
+    try {
+      const res = await fetch('/api/v1/orchestrate/health-check');
+      const data = await res.json();
+      if (data.diagnostic) {
+        mgRenderDiagnostic(data.diagnostic);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerText = '🔄 Testar Conexão OpenRouter Agora';
+    }
   }
 
   function mgBrokerVoice() {
@@ -581,7 +813,13 @@ BROKER_MOBILE_INJECTION = """
     document.getElementById('mg-b-q-brl').innerText = data.est_cost_brl.toFixed(4);
     document.getElementById('mg-b-q-usd').innerText = data.est_cost_usd.toFixed(6);
     document.getElementById('mg-b-savings').innerText = data.savings_vs_tier3_pct > 0 ? `-${data.savings_vs_tier3_pct}% vs Tier 3` : 'Tier Máximo';
-    document.getElementById('mg-b-key-warn').style.display = data.api_key_configured ? 'none' : 'block';
+
+    if (data.diagnostic && !data.diagnostic.ok) {
+      mgRenderDiagnostic(data.diagnostic);
+    } else {
+      document.getElementById('mg-b-diag-panel').style.display = 'none';
+    }
+
     document.getElementById('mg-b-quote-box').style.display = 'block';
     document.getElementById('mg-b-result-box').style.display = 'none';
   }
@@ -600,9 +838,14 @@ BROKER_MOBILE_INJECTION = """
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.detail || 'Falha na execução.');
+        if (data.diagnostic) {
+          mgRenderDiagnostic(data.diagnostic);
+        } else {
+          alert(data.detail || 'Falha na execução.');
+        }
         return;
       }
+      document.getElementById('mg-b-diag-panel').style.display = 'none';
       document.getElementById('mg-b-r-audit').innerText =
         `Modelo: ${data.model_used} ${data.fallback_triggered ? '(FALLBACK ATIVO)' : ''} | ` +
         `Tokens: ${data.prompt_tokens} in / ${data.completion_tokens} out | ` +
