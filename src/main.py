@@ -842,3 +842,8 @@ if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); 
 </script>
 </body>
 </html>"""
+
+
+from src.broker import router as broker_router, register_broker_ui
+app.include_router(broker_router)
+register_broker_ui(app)
